@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { generateText } = require('ai');
 const { createOpenAICompatible } = require('@ai-sdk/openai-compatible');
+const { createGoogleGenerativeAI } = require('@ai-sdk/google');
 const configManager = require('./config_manager');
 
 class AiManager {
@@ -49,6 +50,16 @@ class AiManager {
                     }
                 });
                 aiResponse = response.data.choices?.[0]?.message?.content || '';
+            } else if (profile.provider === 'gemini') {
+                // Strategy: Google AI SDK (Native)
+                const google = createGoogleGenerativeAI({
+                    apiKey: profile.apiKey
+                });
+                const { text } = await generateText({
+                    model: google(profile.model),
+                    messages: messages,
+                });
+                aiResponse = text;
             } else {
                 // Strategy: Vercel AI SDK (For Custom)
                 const headers = this._getHeaders(profile.apiKey);
@@ -87,7 +98,7 @@ class AiManager {
         const { baseUrl, apiKey, model, provider: providerName, soul } = config;
 
         if (!apiKey) throw new Error('API Key kosong.');
-        if (!baseUrl) throw new Error('Base URL kosong.');
+        if (!baseUrl && providerName !== 'gemini') throw new Error('Base URL kosong.');
         if (!model) throw new Error('Model ID kosong.');
 
         const headers = this._getHeaders(apiKey);
@@ -128,6 +139,20 @@ class AiManager {
                 } else {
                     return { success: false, message: 'API merespons tapi format tidak dikenali.' };
                 }
+            } else if (providerName === 'gemini') {
+                const google = createGoogleGenerativeAI({
+                    apiKey: apiKey
+                });
+                const { text } = await generateText({
+                    model: google(model),
+                    messages: testMessages,
+                    maxTokens: 50,
+                });
+
+                console.log('Response:', text);
+                console.log('--- AI TEST CONNECTION END ---');
+
+                return { success: true, message: `Koneksi Berhasil! AI merespons: "${text || '(empty but connected)'}"` };
             } else {
                 const provider = createOpenAICompatible({
                     name: 'test',
@@ -149,6 +174,24 @@ class AiManager {
             console.error('Test Connection Error:', error.response?.data || error);
             const errorMsg = error.response?.data?.error?.message || error.message || 'Unknown error';
             return { success: false, message: `Koneksi Gagal: ${errorMsg}` };
+        }
+    }
+
+    async fetchGeminiModels(apiKey) {
+        if (!apiKey) throw new Error('API Key Gemini diperlukan.');
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+            const response = await axios.get(url);
+            // Filter only models that support content generation
+            return response.data.models
+                .filter(m => m.supportedGenerationMethods.includes('generateContent'))
+                .map(m => ({
+                    id: m.name.replace('models/', ''),
+                    displayName: m.displayName
+                }));
+        } catch (error) {
+            console.error('Fetch Gemini Models Error:', error.response?.data || error.message);
+            throw new Error('Gagal mengambil daftar model Gemini. Pastikan API Key benar.');
         }
     }
 

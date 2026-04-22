@@ -101,13 +101,22 @@ io.on('connection', (socket) => {
     });
 
     socket.on('ai-test', async (config) => {
-        waManager.addLog(`Mengetes koneksi AI ke ${config.baseUrl}...`, 'info');
+        waManager.addLog(`Mengetes koneksi AI ke ${config.baseUrl || config.provider}...`, 'info');
         const result = await aiManager.testConnection(config);
         socket.emit('ai-test-res', result);
         if (result.success) {
             waManager.addLog(result.message, 'success');
         } else {
             waManager.addLog(result.message, 'error');
+        }
+    });
+
+    socket.on('ai-gemini-models-fetch', async (apiKey) => {
+        try {
+            const models = await aiManager.fetchGeminiModels(apiKey);
+            socket.emit('ai-gemini-models-data', { success: true, models });
+        } catch (error) {
+            socket.emit('ai-gemini-models-data', { success: false, message: error.message });
         }
     });
 

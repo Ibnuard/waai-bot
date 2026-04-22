@@ -116,6 +116,8 @@ function Dashboard() {
   const [newProfileName, setNewProfileName] = useState('');
   const [copyFromId, setCopyFromId] = useState('');
   const [isTesting, setIsTesting] = useState(false);
+  const [geminiModels, setGeminiModels] = useState([]);
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
 
   // Helper to get active profile data
   const activeProfile = aiConfig.profiles.find(p => p.id === aiConfig.activeProfileId);
@@ -216,6 +218,15 @@ function Dashboard() {
       console.error('Socket error:', err);
     });
 
+    socket.on('ai-gemini-models-data', (res) => {
+      setIsFetchingModels(false);
+      if (res.success) {
+        setGeminiModels(res.models);
+      } else {
+        alert(res.message);
+      }
+    });
+
     return () => {
       socket.off('connect');
       socket.off('init-state');
@@ -252,6 +263,12 @@ function Dashboard() {
     setNewProfileName('');
     setCopyFromId('');
     setShowAddModal(false);
+  };
+
+  const fetchGeminiModels = () => {
+    if (!activeProfile.apiKey) return alert('Masukkan API Key dulu');
+    setIsFetchingModels(true);
+    socket.emit('ai-gemini-models-fetch', activeProfile.apiKey);
   };
 
   const handleTestConnection = () => {
@@ -611,20 +628,23 @@ function Dashboard() {
                         className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
                       >
                         <option value="openrouter" className="bg-[#0f172a]">OpenRouter</option>
+                        <option value="gemini" className="bg-[#0f172a]">Google Gemini (Native)</option>
                         <option value="custom" className="bg-[#0f172a]">Custom (OpenAI Compatible)</option>
                       </select>
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Base URL</label>
-                      <input 
-                        type="text"
-                        value={activeProfile.baseUrl}
-                        onChange={(e) => updateProfileField('baseUrl', e.target.value)}
-                        placeholder="https://api.openai.com/v1"
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
-                      />
-                    </div>
+                    {activeProfile.provider !== 'gemini' && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Base URL</label>
+                        <input 
+                          type="text"
+                          value={activeProfile.baseUrl}
+                          onChange={(e) => updateProfileField('baseUrl', e.target.value)}
+                          placeholder="https://api.openai.com/v1"
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all placeholder:text-slate-600"
+                        />
+                      </div>
+                    )}
 
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">API Key</label>
@@ -637,16 +657,43 @@ function Dashboard() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Model ID</label>
-                        <input 
-                          type="text"
-                          value={activeProfile.model}
-                          onChange={(e) => updateProfileField('model', e.target.value)}
-                          placeholder="gpt-4o"
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
-                        />
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Model ID</label>
+                          {activeProfile.provider === 'gemini' && (
+                            <button 
+                              onClick={fetchGeminiModels}
+                              disabled={isFetchingModels}
+                              className="text-[10px] font-bold text-blue-400 hover:text-blue-300 disabled:opacity-50 transition-colors"
+                            >
+                              {isFetchingModels ? 'Fetching...' : '↻ Fetch Models'}
+                            </button>
+                          )}
+                        </div>
+                        
+                        {activeProfile.provider === 'gemini' && geminiModels.length > 0 ? (
+                          <select 
+                            value={activeProfile.model}
+                            onChange={(e) => updateProfileField('model', e.target.value)}
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                          >
+                            <option value="">Pilih Model Gemini</option>
+                            {geminiModels.map(m => (
+                              <option key={m.id} value={m.id} className="bg-[#0f172a]">
+                                {m.displayName} ({m.id})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input 
+                            type="text"
+                            value={activeProfile.model}
+                            onChange={(e) => updateProfileField('model', e.target.value)}
+                            placeholder={activeProfile.provider === 'gemini' ? "Klik 'Fetch Models' atau ketik ID" : "gpt-3.5-turbo"}
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all placeholder:text-slate-600"
+                          />
+                        )}
                       </div>
                       <div className="space-y-2">
                         <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Trigger Prefix</label>
