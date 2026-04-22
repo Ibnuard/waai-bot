@@ -159,9 +159,12 @@ class WhatsAppManager {
 
                 this.addLog(`[${pushName}] (${this.normalizeJid(from)}): ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`, 'message');
 
-                const profile = configManager.getActiveProfile();
+                const profile = configManager.getAiConfig().profiles.find(p => p.id === configManager.getAiConfig().activeProfileId);
                 const trigger = (profile.triggerPrefix || '/ai ').trim().toLowerCase();
                 const cleanContent = content.trim();
+
+                // Detailed debug log (only in console)
+                console.log(`[DEBUG] Check Trigger - msg: "${cleanContent}", trigger: "${trigger}", profile: "${profile.name}", enabled: ${profile.enabled}`);
 
                 // 1. Check for AI Trigger
                 if (profile.enabled && cleanContent.toLowerCase().startsWith(trigger)) {
@@ -169,7 +172,7 @@ class WhatsAppManager {
                     if (!prompt) return;
 
                     try {
-                        this.addLog(`[AI] Memproses pesan dari ${pushName}...`, 'info');
+                        this.addLog(`[AI] Memproses pesan via ${profile.name} (${profile.provider})...`, 'info');
                         const response = await aiManager.generateResponse(prompt, from);
                         await this.sock.sendMessage(from, { text: response }, { quoted: msg });
                         this.addLog(`[AI] Membalas ke ${pushName}`, 'success');

@@ -117,6 +117,7 @@ function Dashboard() {
   const [copyFromId, setCopyFromId] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [geminiModels, setGeminiModels] = useState([]);
+  const [localModels, setLocalModels] = useState([]);
   const [isFetchingModels, setIsFetchingModels] = useState(false);
 
   // Helper to get active profile data
@@ -139,14 +140,11 @@ function Dashboard() {
     });
 
     socket.on('ai-config-data', (config) => {
-      if (config) setAiConfig(config);
+      setAiConfig(config);
     });
 
-    socket.on('ai-config-res', ({ success }) => {
-      setSaveStatus({ 
-        type: success ? 'success' : 'error', 
-        message: success ? 'Konfigurasi profil aktif berhasil disimpan!' : 'Gagal menyimpan konfigurasi.' 
-      });
+    socket.on('save-success', (res) => {
+      setSaveStatus({ type: 'success', message: res.message || 'Konfigurasi disimpan!' });
       setTimeout(() => setSaveStatus({ type: '', message: '' }), 3000);
     });
 
@@ -227,6 +225,15 @@ function Dashboard() {
       }
     });
 
+    socket.on('ai-local-models-data', (res) => {
+      setIsFetchingModels(false);
+      if (res.success) {
+        setLocalModels(res.models);
+      } else {
+        console.warn('Local Model Fetch failed:', res.message);
+      }
+    });
+
     return () => {
       socket.off('connect');
       socket.off('init-state');
@@ -238,11 +245,21 @@ function Dashboard() {
     };
   }, []);
 
-  const updateProfileField = (field, value) => {
-    const updatedProfiles = aiConfig.profiles.map(p => 
-      p.id === aiConfig.activeProfileId ? { ...p, [field]: value } : p
-    );
-    setAiConfig({ ...aiConfig, profiles: updatedProfiles });
+  const updateProfileFields = (updates, autoSave = false) => {
+    setAiConfig(prev => {
+      const updatedProfiles = prev.profiles.map(p => 
+        p.id === prev.activeProfileId ? { ...p, ...updates } : p
+      );
+      
+      const newConfig = { ...prev, profiles: updatedProfiles };
+      
+      if (autoSave) {
+        const activeProfile = updatedProfiles.find(p => p.id === prev.activeProfileId);
+        socket.emit('ai-config-update', activeProfile);
+      }
+      
+      return newConfig;
+    });
   };
 
   const handleSaveConfig = () => {
@@ -271,6 +288,12 @@ function Dashboard() {
     socket.emit('ai-gemini-models-fetch', activeProfile.apiKey);
   };
 
+  const fetchLocalModels = () => {
+    if (!activeProfile.baseUrl) return alert('Masukkan Base URL dulu');
+    setIsFetchingModels(true);
+    socket.emit('ai-local-models-fetch', activeProfile.baseUrl);
+  };
+
   const handleTestConnection = () => {
     if (isTesting) return;
     setIsTesting(true);
@@ -281,6 +304,33 @@ function Dashboard() {
       model: activeProfile.model,
       soul: activeProfile.soul
     });
+  };
+
+  // Auto-fetch models when provider changes
+  useEffect(() => {
+    if (!activeProfile) return;
+    
+    if (activeProfile.provider === 'gemini' && activeProfile.apiKey && geminiModels.length === 0) {
+      fetchGeminiModels();
+    }
+    if (activeProfile.provider === 'local' && activeProfile.baseUrl && localModels.length === 0) {
+      fetchLocalModels();
+    }
+  }, [activeProfile?.provider, activeProfile?.apiKey, activeProfile?.baseUrl]);
+
+  // Clear models when provider changes to different types
+  useEffect(() => {
+    if (!activeProfile) return;
+    
+    if (activeProfile.provider !== 'gemini') setGeminiModels([]);
+    if (activeProfile.provider !== 'local') setLocalModels([]);
+  }, [activeProfile?.provider]);
+
+  const handleCreateProfile = () => {
+    if (aiConfig.profiles.length <= 1) return;
+    if (window.confirm(`Hapus profil "${activeProfile.name}"?`)) {
+      socket.emit('ai-profile-delete', aiConfig.activeProfileId);
+    }
   };
 
   const handleDeleteProfile = () => {
@@ -566,7 +616,9 @@ function Dashboard() {
                   >
                     {aiConfig.profiles.length === 0 && <option value="">No Profiles</option>}
                     {aiConfig.profiles.map(p => (
-                      <option key={p.id} value={p.id} className="bg-[#0f172a]">{p.name}</option>
+                      <option key={p.id} value={p.id} className="bg-[#0f172a]">
+                        {p.name} {p.id === aiConfig.activeProfileId ? '(Active)' : ''}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -611,8 +663,9 @@ function Dashboard() {
                     <div className="flex items-center gap-3">
                       <span className="text-sm text-slate-400">Status</span>
                       <button 
-                        onClick={() => updateProfileField('enabled', !activeProfile.enabled)}
+                        onClick={() => updateProfileFields({ enabled: !activeProfile.enabled }, true)}
                         className={`w-12 h-6 rounded-full transition-all relative ${activeProfile.enabled ? 'bg-blue-600' : 'bg-slate-700'}`}
+                        title={activeProfile.enabled ? "Klik untuk Nonaktifkan" : "Klik untuk Aktifkan"}
                       >
                         <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${activeProfile.enabled ? 'right-1' : 'left-1'}`} />
                       </button>
@@ -624,11 +677,30 @@ function Dashboard() {
                       <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Provider</label>
                       <select 
                         value={activeProfile.provider}
-                        onChange={(e) => updateProfileField('provider', e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const updates = { 
+                            provider: val,
+                            // If switching to local, use default Ollama URL
+                            baseUrl: val === 'local' ? 'http://localhost:11434/v1' : 
+                                    val === 'gemini' ? '' : 
+                                    val === 'openrouter' ? 'https://openrouter.ai/api/v1' : 
+                                    activeProfile.baseUrl,
+                            // Clear model ID when provider changes to force refetch or clean state
+                            model: ''
+                          };
+                          
+                          // Clear stored models for the old provider
+                          setGeminiModels([]);
+                          setLocalModels([]);
+                          
+                          updateProfileFields(updates);
+                        }}
                         className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
                       >
                         <option value="openrouter" className="bg-[#0f172a]">OpenRouter</option>
                         <option value="gemini" className="bg-[#0f172a]">Google Gemini (Native)</option>
+                        <option value="local" className="bg-[#0f172a]">Local Llama (Ollama / LM Studio)</option>
                         <option value="custom" className="bg-[#0f172a]">Custom (OpenAI Compatible)</option>
                       </select>
                     </div>
@@ -639,35 +711,38 @@ function Dashboard() {
                         <input 
                           type="text"
                           value={activeProfile.baseUrl}
-                          onChange={(e) => updateProfileField('baseUrl', e.target.value)}
+                          onChange={(e) => updateProfileFields({ baseUrl: e.target.value })}
                           placeholder="https://api.openai.com/v1"
                           className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all placeholder:text-slate-600"
                         />
                       </div>
                     )}
 
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">API Key</label>
-                      <input 
-                        type="password"
-                        value={activeProfile.apiKey}
-                        onChange={(e) => updateProfileField('apiKey', e.target.value)}
-                        placeholder="sk-..."
-                        className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
-                      />
-                    </div>
+                    {activeProfile.provider !== 'local' && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">API Key</label>
+                        <input 
+                          type="password"
+                          value={activeProfile.apiKey}
+                          onChange={(e) => updateProfileFields({ apiKey: e.target.value })}
+                          placeholder={activeProfile.provider === 'gemini' ? "AIzaSy..." : "sk-..."}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                        />
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Model ID</label>
-                          {activeProfile.provider === 'gemini' && (
+                          {(activeProfile.provider === 'gemini' || activeProfile.provider === 'local') && (
                             <button 
-                              onClick={fetchGeminiModels}
+                              onClick={activeProfile.provider === 'gemini' ? fetchGeminiModels : fetchLocalModels}
                               disabled={isFetchingModels}
-                              className="text-[10px] font-bold text-blue-400 hover:text-blue-300 disabled:opacity-50 transition-colors"
+                              className="px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg text-[10px] font-bold text-blue-400 disabled:opacity-50 transition-all flex items-center gap-1 border border-blue-500/20"
                             >
-                              {isFetchingModels ? 'Fetching...' : '↻ Fetch Models'}
+                              <RefreshCw size={10} className={isFetchingModels ? 'animate-spin' : ''} />
+                              {isFetchingModels ? 'Fetching...' : 'Refetch'}
                             </button>
                           )}
                         </div>
@@ -675,7 +750,7 @@ function Dashboard() {
                         {activeProfile.provider === 'gemini' && geminiModels.length > 0 ? (
                           <select 
                             value={activeProfile.model}
-                            onChange={(e) => updateProfileField('model', e.target.value)}
+                            onChange={(e) => updateProfileFields({ model: e.target.value })}
                             className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
                           >
                             <option value="">Pilih Model Gemini</option>
@@ -685,12 +760,29 @@ function Dashboard() {
                               </option>
                             ))}
                           </select>
+                        ) : activeProfile.provider === 'local' && localModels.length > 0 ? (
+                          <select 
+                            value={activeProfile.model}
+                            onChange={(e) => updateProfileFields({ model: e.target.value })}
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                          >
+                            <option value="">Pilih Model Lokal</option>
+                            {localModels.map(m => (
+                              <option key={m.id} value={m.id} className="bg-[#0f172a]">
+                                {m.displayName}
+                              </option>
+                            ))}
+                          </select>
                         ) : (
                           <input 
                             type="text"
                             value={activeProfile.model}
-                            onChange={(e) => updateProfileField('model', e.target.value)}
-                            placeholder={activeProfile.provider === 'gemini' ? "Klik 'Fetch Models' atau ketik ID" : "gpt-3.5-turbo"}
+                            onChange={(e) => updateProfileFields({ model: e.target.value })}
+                            placeholder={
+                              activeProfile.provider === 'gemini' || activeProfile.provider === 'local' 
+                                ? "Klik 'Fetch Models' atau ketik ID" 
+                                : "gpt-3.5-turbo"
+                            }
                             className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all placeholder:text-slate-600"
                           />
                         )}
@@ -700,7 +792,7 @@ function Dashboard() {
                         <input 
                           type="text"
                           value={activeProfile.triggerPrefix}
-                          onChange={(e) => updateProfileField('triggerPrefix', e.target.value)}
+                          onChange={(e) => updateProfileFields({ triggerPrefix: e.target.value })}
                           placeholder="/ai "
                           className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
                         />
@@ -713,7 +805,7 @@ function Dashboard() {
                         <p className="text-xs text-slate-400">Bot akan ingat 10 pesan terakhir per kontak</p>
                       </div>
                       <button 
-                        onClick={() => updateProfileField('useHistory', !activeProfile.useHistory)}
+                        onClick={() => updateProfileFields({ useHistory: !activeProfile.useHistory })}
                         className={`w-12 h-6 rounded-full transition-all relative ${activeProfile.useHistory ? 'bg-blue-600' : 'bg-slate-700'}`}
                       >
                         <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${activeProfile.useHistory ? 'right-1' : 'left-1'}`} />
@@ -756,7 +848,7 @@ function Dashboard() {
                     </p>
                     <textarea 
                       value={activeProfile.soul}
-                      onChange={(e) => updateProfileField('soul', e.target.value)}
+                      onChange={(e) => updateProfileFields({ soul: e.target.value })}
                       className="w-full h-[380px] bg-white/5 border border-white/10 rounded-2xl p-6 focus:border-purple-500 outline-none transition-all font-mono text-sm scrollbar-thin scrollbar-thumb-white/10 resize-none"
                       placeholder="# Bot Persona..."
                     />

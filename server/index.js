@@ -60,6 +60,7 @@ io.on('connection', (socket) => {
         socket.emit('ai-config-res', { success });
         if (success) {
             socket.emit('ai-config-data', configManager.getAiConfig());
+            socket.emit('save-success', { message: 'Profil AI diperbarui!' });
             waManager.addLog(`Konfigurasi profil AI aktif diperbarui.`, 'info');
         }
     });
@@ -117,6 +118,15 @@ io.on('connection', (socket) => {
             socket.emit('ai-gemini-models-data', { success: true, models });
         } catch (error) {
             socket.emit('ai-gemini-models-data', { success: false, message: error.message });
+        }
+    });
+
+    socket.on('ai-local-models-fetch', async (baseUrl) => {
+        try {
+            const models = await aiManager.fetchLocalModels(baseUrl);
+            socket.emit('ai-local-models-data', { success: true, models });
+        } catch (error) {
+            socket.emit('ai-local-models-data', { success: false, message: error.message });
         }
     });
 

@@ -20,7 +20,7 @@ class AiManager {
     async generateResponse(userMessage, senderId) {
         const profile = configManager.getActiveProfile();
 
-        if (!profile.apiKey) {
+        if (!profile.apiKey && profile.provider !== 'local') {
             throw new Error('API Key belum diatur untuk profil ini. Silakan atur di dashboard.');
         }
 
@@ -60,9 +60,9 @@ class AiManager {
                     messages: messages,
                 });
                 aiResponse = text;
-            } else {
-                // Strategy: Vercel AI SDK (For Custom)
-                const headers = this._getHeaders(profile.apiKey);
+            } else if (profile.provider === 'custom' || profile.provider === 'local') {
+                // Strategy: Vercel AI SDK (For Custom / Local)
+                const headers = this._getHeaders(profile.apiKey || 'not-needed');
                 const provider = createOpenAICompatible({
                     name: profile.provider || 'custom',
                     baseURL: profile.baseUrl,
@@ -97,7 +97,7 @@ class AiManager {
     async testConnection(config) {
         const { baseUrl, apiKey, model, provider: providerName, soul } = config;
 
-        if (!apiKey) throw new Error('API Key kosong.');
+        if (!apiKey && providerName !== 'local') throw new Error('API Key kosong.');
         if (!baseUrl && providerName !== 'gemini') throw new Error('Base URL kosong.');
         if (!model) throw new Error('Model ID kosong.');
 
@@ -153,7 +153,7 @@ class AiManager {
                 console.log('--- AI TEST CONNECTION END ---');
 
                 return { success: true, message: `Koneksi Berhasil! AI merespons: "${text || '(empty but connected)'}"` };
-            } else {
+            } else if (providerName === 'custom' || providerName === 'local') {
                 const provider = createOpenAICompatible({
                     name: 'test',
                     baseURL: baseUrl,
@@ -192,6 +192,25 @@ class AiManager {
         } catch (error) {
             console.error('Fetch Gemini Models Error:', error.response?.data || error.message);
             throw new Error('Gagal mengambil daftar model Gemini. Pastikan API Key benar.');
+        }
+    }
+
+    async fetchLocalModels(baseUrl) {
+        if (!baseUrl) throw new Error('Base URL diperlukan untuk fetch model lokal.');
+        try {
+            // Using OpenAI-compatible endpoint
+            const url = `${baseUrl}/models`;
+            const response = await axios.get(url);
+            if (response.data && response.data.data) {
+                return response.data.data.map(m => ({
+                    id: m.id,
+                    displayName: m.id
+                }));
+            }
+            return [];
+        } catch (error) {
+            console.error('Fetch Local Models Error:', error.response?.data || error.message);
+            throw new Error('Gagal mengambil daftar model lokal. Pastikan server (Ollama/LM Studio) sudah aktif dan Base URL benar.');
         }
     }
 
