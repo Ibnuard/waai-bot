@@ -159,12 +159,12 @@ class WhatsAppManager {
 
                 this.addLog(`[${pushName}] (${this.normalizeJid(from)}): ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`, 'message');
 
-                const config = configManager.getAiConfig();
-                const trigger = (config.triggerPrefix || '/ai ').trim().toLowerCase();
+                const profile = configManager.getActiveProfile();
+                const trigger = (profile.triggerPrefix || '/ai ').trim().toLowerCase();
                 const cleanContent = content.trim();
 
                 // 1. Check for AI Trigger
-                if (config.enabled && cleanContent.toLowerCase().startsWith(trigger)) {
+                if (profile.enabled && cleanContent.toLowerCase().startsWith(trigger)) {
                     const prompt = cleanContent.slice(trigger.length).trim();
                     if (!prompt) return;
 
@@ -200,11 +200,20 @@ class WhatsAppManager {
     async stop() {
         if (this.sock) {
             try {
-                this.sock.ev.removeAllListeners('connection.update');
-                this.sock.ev.removeAllListeners('messages.upsert');
+                // Defensive removal of listeners
+                if (this.sock.ev) {
+                    this.sock.ev.removeAllListeners('connection.update');
+                    this.sock.ev.removeAllListeners('messages.upsert');
+                    this.sock.ev.removeAllListeners('creds.update');
+                }
+                
+                this.addLog('Menutup koneksi WhatsApp...');
                 await this.sock.end();
-            } catch (e) {}
-            this.sock = null;
+            } catch (e) {
+                console.error('Error saat menutup koneksi:', e);
+            } finally {
+                this.sock = null;
+            }
         }
         this.updateStatus('DISCONNECTED');
         this.addLog('Layanan WhatsApp dihentikan.');

@@ -108,23 +108,22 @@ function Dashboard() {
   // AI & Persona State
   const [activeView, setActiveView] = useState('home'); // 'home' or 'settings'
   const [aiConfig, setAiConfig] = useState({
-    enabled: false,
-    provider: 'openrouter',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    apiKey: '',
-    model: 'meta-llama/llama-3-8b-instruct',
-    triggerPrefix: '/ai ',
-    useHistory: false
+    activeProfileId: 'default',
+    profiles: []
   });
-  const [soul, setSoul] = useState('');
   const [saveStatus, setSaveStatus] = useState({ type: '', message: '' });
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [copyFromId, setCopyFromId] = useState('');
+  const [isTesting, setIsTesting] = useState(false);
+
+  // Helper to get active profile data
+  const activeProfile = aiConfig.profiles.find(p => p.id === aiConfig.activeProfileId);
 
   useEffect(() => {
     socket.on('connect', () => {
       console.log('Socket connected:', socket.id);
-      // Fetch initial AI data
       socket.emit('ai-config-get');
-      socket.emit('soul-get');
     });
 
     socket.on('init-state', (state) => {
@@ -141,14 +140,23 @@ function Dashboard() {
       if (config) setAiConfig(config);
     });
 
-    socket.on('soul-data', (content) => {
-      if (content !== undefined) setSoul(content);
-    });
-
     socket.on('ai-config-res', ({ success }) => {
       setSaveStatus({ 
         type: success ? 'success' : 'error', 
-        message: success ? 'Konfigurasi AI berhasil disimpan!' : 'Gagal menyimpan konfigurasi.' 
+        message: success ? 'Konfigurasi profil aktif berhasil disimpan!' : 'Gagal menyimpan konfigurasi.' 
+      });
+      setTimeout(() => setSaveStatus({ type: '', message: '' }), 3000);
+    });
+
+    socket.on('ai-profile-res', ({ success, action }) => {
+      let msg = '';
+      if (action === 'switch') msg = 'Berpindah profil berhasil!';
+      if (action === 'add') msg = 'Profil baru berhasil dibuat!';
+      if (action === 'delete') msg = 'Profil berhasil dihapus!';
+
+      setSaveStatus({ 
+        type: success ? 'success' : 'error', 
+        message: success ? msg : `Gagal ${action} profil.` 
       });
       setTimeout(() => setSaveStatus({ type: '', message: '' }), 3000);
     });
@@ -159,6 +167,20 @@ function Dashboard() {
         message: success ? 'Persona berhasil diperbarui!' : 'Gagal memperbarui persona.' 
       });
       setTimeout(() => setSaveStatus({ type: '', message: '' }), 3000);
+    });
+
+    socket.on('ai-test-res', ({ success, message }) => {
+      setIsTesting(false);
+      setSaveStatus({ 
+        type: success ? 'success' : 'error', 
+        message: message 
+      });
+      if (success) {
+        setTimeout(() => setSaveStatus({ type: '', message: '' }), 5000);
+      } else {
+        // Keep error visible longer
+        setTimeout(() => setSaveStatus({ type: '', message: '' }), 8000);
+      }
     });
 
     socket.on('status-update', (data) => {
@@ -205,12 +227,50 @@ function Dashboard() {
     };
   }, []);
 
+  const updateProfileField = (field, value) => {
+    const updatedProfiles = aiConfig.profiles.map(p => 
+      p.id === aiConfig.activeProfileId ? { ...p, [field]: value } : p
+    );
+    setAiConfig({ ...aiConfig, profiles: updatedProfiles });
+  };
+
   const handleSaveConfig = () => {
-    socket.emit('ai-config-update', aiConfig);
+    socket.emit('ai-config-update', activeProfile);
   };
 
   const handleSaveSoul = () => {
-    socket.emit('soul-update', soul);
+    socket.emit('soul-update', activeProfile.soul);
+  };
+
+  const handleProfileSwitch = (id) => {
+    socket.emit('ai-profile-switch', id);
+  };
+
+  const handleAddProfile = () => {
+    if (!newProfileName.trim()) return;
+    socket.emit('ai-profile-add', { name: newProfileName, copyFromId });
+    setNewProfileName('');
+    setCopyFromId('');
+    setShowAddModal(false);
+  };
+
+  const handleTestConnection = () => {
+    if (isTesting) return;
+    setIsTesting(true);
+    socket.emit('ai-test', {
+      provider: activeProfile.provider,
+      baseUrl: activeProfile.baseUrl,
+      apiKey: activeProfile.apiKey,
+      model: activeProfile.model,
+      soul: activeProfile.soul
+    });
+  };
+
+  const handleDeleteProfile = () => {
+    if (aiConfig.profiles.length <= 1) return;
+    if (window.confirm(`Hapus profil "${activeProfile.name}"?`)) {
+      socket.emit('ai-profile-delete', aiConfig.activeProfileId);
+    }
   };
 
   const startWA = () => socket.emit('start-wa');
@@ -280,6 +340,54 @@ function Dashboard() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* New Profile Modal */}
+        <AnimatePresence>
+          {showAddModal && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+              <motion.div 
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                onClick={() => setShowAddModal(false)}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+                className="relative glass p-8 rounded-3xl w-full max-w-md space-y-6"
+              >
+                <h3 className="text-xl font-bold">Buat Profil AI Baru</h3>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Nama Profil</label>
+                    <input 
+                      type="text" 
+                      value={newProfileName} 
+                      onChange={(e) => setNewProfileName(e.target.value)}
+                      placeholder="Contoh: Bot Sales"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Salin Dari (Opsional)</label>
+                    <select 
+                      value={copyFromId} 
+                      onChange={(e) => setCopyFromId(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                    >
+                      <option value="" className="bg-[#0f172a]">-- Mulai dari Awal --</option>
+                      {aiConfig.profiles.map(p => (
+                        <option key={p.id} value={p.id} className="bg-[#0f172a]">{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button onClick={() => setShowAddModal(false)} className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-2xl font-bold transition-all">Batal</button>
+                  <button onClick={handleAddProfile} className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold transition-all shadow-lg shadow-blue-600/20">Buat Profil</button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
         
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 glass p-6 rounded-3xl">
@@ -304,7 +412,7 @@ function Dashboard() {
                 className={`p-3 rounded-full transition-all ${activeView === 'settings' ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}
                 title={activeView === 'settings' ? 'Kembali ke Dashboard' : 'Buka Pengaturan AI'}
               >
-                {activeView === 'settings' ? <LayoutDashboard className="w-5 h-5" /> : <RefreshCw className="w-5 h-5" />}
+                <LayoutDashboard className="w-5 h-5" />
               </button>
               {status === 'DISCONNECTED' ? (
                 <button onClick={startWA} className="h-full px-6 bg-blue-600 hover:bg-blue-500 text-white rounded-full transition-all font-semibold shadow-lg shadow-blue-600/20 flex items-center gap-2">
@@ -406,151 +514,233 @@ function Dashboard() {
               </div>
 
               {/* Quick AI Toggle View */}
-              <div className={`glass rounded-3xl p-6 border ${aiConfig.enabled ? 'border-blue-500/30' : 'border-white/5'}`}>
+              <div className={`glass rounded-3xl p-6 border ${activeProfile?.enabled ? 'border-blue-500/30' : 'border-white/5'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <Zap className={`w-5 h-5 ${aiConfig.enabled ? 'text-blue-400' : 'text-slate-500'}`} />
-                    <span className="font-bold">AI Status</span>
+                    <Zap className={`w-5 h-5 ${activeProfile?.enabled ? 'text-blue-400' : 'text-slate-500'}`} />
+                    <span className="font-bold">AI: {activeProfile?.name || 'Disabled'}</span>
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${aiConfig.enabled ? 'bg-blue-500/20 text-blue-400' : 'bg-white/5 text-slate-500'}`}>
-                    {aiConfig.enabled ? 'Active' : 'Disabled'}
+                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${activeProfile?.enabled ? 'bg-blue-500/20 text-blue-400' : 'bg-white/5 text-slate-500'}`}>
+                    {activeProfile?.enabled ? 'Active' : 'Offline'}
                   </div>
                 </div>
                 <button 
                   onClick={() => setActiveView('settings')}
                   className="w-full py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-xs font-bold transition-all"
                 >
-                  Configure AI Settings
+                  {activeProfile ? 'Configure Profile' : 'Setup AI'}
                 </button>
               </div>
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* AI Configuration */}
-            <div className="glass rounded-3xl p-8 space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Zap className="w-6 h-6 text-blue-400" />
-                  <h2 className="text-xl font-bold">AI Configuration</h2>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-slate-400">Enabled</span>
-                  <button 
-                    onClick={() => setAiConfig({...aiConfig, enabled: !aiConfig.enabled})}
-                    className={`w-12 h-6 rounded-full transition-all relative ${aiConfig.enabled ? 'bg-blue-600' : 'bg-slate-700'}`}
-                  >
-                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${aiConfig.enabled ? 'right-1' : 'left-1'}`} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Provider</label>
+          <div className="space-y-8">
+            
+            {/* Profile Management Toolbar */}
+            <div className="glass p-4 rounded-3xl flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-2xl border border-white/10">
+                  <Zap className="w-4 h-4 text-blue-400" />
                   <select 
-                    value={aiConfig.provider}
-                    onChange={(e) => setAiConfig({...aiConfig, provider: e.target.value})}
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                    value={aiConfig.activeProfileId}
+                    onChange={(e) => handleProfileSwitch(e.target.value)}
+                    className="bg-transparent text-sm font-bold outline-none cursor-pointer"
+                    disabled={aiConfig.profiles.length === 0}
                   >
-                    <option value="openrouter" className="bg-[#0f172a]">OpenRouter</option>
-                    <option value="openai" className="bg-[#0f172a]">OpenAI</option>
-                    <option value="custom" className="bg-[#0f172a]">Custom (OpenAI Compatible)</option>
+                    {aiConfig.profiles.length === 0 && <option value="">No Profiles</option>}
+                    {aiConfig.profiles.map(p => (
+                      <option key={p.id} value={p.id} className="bg-[#0f172a]">{p.name}</option>
+                    ))}
                   </select>
                 </div>
+                <button 
+                  onClick={() => setShowAddModal(true)}
+                  className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl text-sm font-bold transition-all shadow-lg shadow-blue-600/20"
+                >
+                   + New Profile
+                </button>
+              </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Base URL</label>
+              {activeProfile && (
+                <div className="flex items-center gap-3">
                   <input 
-                    type="text"
-                    value={aiConfig.baseUrl}
-                    onChange={(e) => setAiConfig({...aiConfig, baseUrl: e.target.value})}
-                    placeholder="https://api.openai.com/v1"
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                    type="text" 
+                    value={activeProfile.name}
+                    onChange={(e) => updateProfileField('name', e.target.value)}
+                    className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 transition-all w-48"
+                    placeholder="Nama Profil"
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">API Key</label>
-                  <input 
-                    type="password"
-                    value={aiConfig.apiKey}
-                    onChange={(e) => setAiConfig({...aiConfig, apiKey: e.target.value})}
-                    placeholder="sk-..."
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Model ID</label>
-                    <input 
-                      type="text"
-                      value={aiConfig.model}
-                      onChange={(e) => setAiConfig({...aiConfig, model: e.target.value})}
-                      placeholder="gpt-4o"
-                      className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Trigger Prefix</label>
-                    <input 
-                      type="text"
-                      value={aiConfig.triggerPrefix}
-                      onChange={(e) => setAiConfig({...aiConfig, triggerPrefix: e.target.value})}
-                      placeholder="/ai "
-                      className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                  <div>
-                    <p className="font-bold">Use Chat History</p>
-                    <p className="text-xs text-slate-400">Bot akan ingat 10 pesan terakhir per kontak</p>
-                  </div>
                   <button 
-                    onClick={() => setAiConfig({...aiConfig, useHistory: !aiConfig.useHistory})}
-                    className={`w-12 h-6 rounded-full transition-all relative ${aiConfig.useHistory ? 'bg-blue-600' : 'bg-slate-700'}`}
+                    onClick={handleDeleteProfile}
+                    disabled={aiConfig.profiles.length <= 1}
+                    className="p-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 rounded-xl transition-all disabled:opacity-20"
+                    title="Hapus Profil"
                   >
-                    <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${aiConfig.useHistory ? 'right-1' : 'left-1'}`} />
+                    <AlertCircle className="w-5 h-5" />
                   </button>
                 </div>
-
-                <button 
-                  onClick={handleSaveConfig}
-                  className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold transition-all shadow-xl shadow-blue-600/20"
-                >
-                  Save AI Configuration
-                </button>
-              </div>
+              )}
             </div>
 
-            {/* Persona SOUL Editor */}
-            <div className="glass rounded-3xl p-8 space-y-6">
-              <div className="flex items-center gap-3">
-                <LayoutDashboard className="w-6 h-6 text-purple-400" />
-                <h2 className="text-xl font-bold">Persona (SOUL.md)</h2>
-              </div>
+            {activeProfile ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* AI Configuration */}
+                <div className="glass rounded-3xl p-8 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Zap className="w-6 h-6 text-blue-400" />
+                      <h2 className="text-xl font-bold">Provider Config</h2>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-slate-400">Status</span>
+                      <button 
+                        onClick={() => updateProfileField('enabled', !activeProfile.enabled)}
+                        className={`w-12 h-6 rounded-full transition-all relative ${activeProfile.enabled ? 'bg-blue-600' : 'bg-slate-700'}`}
+                      >
+                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${activeProfile.enabled ? 'right-1' : 'left-1'}`} />
+                      </button>
+                    </div>
+                  </div>
 
-              <div className="space-y-4">
-                <p className="text-sm text-slate-400 leading-relaxed">
-                  Definisikan kepribadian, gaya bicara, dan pengetahuan bot Anda di sini. Ini akan digunakan sebagai <strong>System Prompt</strong>.
-                </p>
-                <textarea 
-                  value={soul}
-                  onChange={(e) => setSoul(e.target.value)}
-                  className="w-full h-[380px] bg-white/5 border border-white/10 rounded-2xl p-6 focus:border-purple-500 outline-none transition-all font-mono text-sm scrollbar-thin scrollbar-thumb-white/10 resize-none"
-                  placeholder="# Bot Persona..."
-                />
+                  <div className="grid grid-cols-1 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Provider</label>
+                      <select 
+                        value={activeProfile.provider}
+                        onChange={(e) => updateProfileField('provider', e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                      >
+                        <option value="openrouter" className="bg-[#0f172a]">OpenRouter</option>
+                        <option value="custom" className="bg-[#0f172a]">Custom (OpenAI Compatible)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Base URL</label>
+                      <input 
+                        type="text"
+                        value={activeProfile.baseUrl}
+                        onChange={(e) => updateProfileField('baseUrl', e.target.value)}
+                        placeholder="https://api.openai.com/v1"
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">API Key</label>
+                      <input 
+                        type="password"
+                        value={activeProfile.apiKey}
+                        onChange={(e) => updateProfileField('apiKey', e.target.value)}
+                        placeholder="sk-..."
+                        className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Model ID</label>
+                        <input 
+                          type="text"
+                          value={activeProfile.model}
+                          onChange={(e) => updateProfileField('model', e.target.value)}
+                          placeholder="gpt-4o"
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Trigger Prefix</label>
+                        <input 
+                          type="text"
+                          value={activeProfile.triggerPrefix}
+                          onChange={(e) => updateProfileField('triggerPrefix', e.target.value)}
+                          placeholder="/ai "
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                      <div>
+                        <p className="font-bold">Use Chat History</p>
+                        <p className="text-xs text-slate-400">Bot akan ingat 10 pesan terakhir per kontak</p>
+                      </div>
+                      <button 
+                        onClick={() => updateProfileField('useHistory', !activeProfile.useHistory)}
+                        className={`w-12 h-6 rounded-full transition-all relative ${activeProfile.useHistory ? 'bg-blue-600' : 'bg-slate-700'}`}
+                      >
+                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${activeProfile.useHistory ? 'right-1' : 'left-1'}`} />
+                      </button>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={handleTestConnection}
+                        disabled={isTesting}
+                        className={`flex-1 py-4 rounded-2xl font-bold transition-all border flex items-center justify-center gap-2 ${
+                          isTesting 
+                          ? 'bg-white/5 border-white/10 text-slate-500' 
+                          : 'bg-transparent border-blue-500/50 text-blue-400 hover:bg-blue-500/10'
+                        }`}
+                      >
+                        {isTesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                        {isTesting ? 'Testing...' : 'Test Connection'}
+                      </button>
+                      <button 
+                        onClick={handleSaveConfig}
+                        className="flex-[2] py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-bold transition-all shadow-xl shadow-blue-600/20"
+                      >
+                        Update Current Profile
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Persona SOUL Editor */}
+                <div className="glass rounded-3xl p-8 space-y-6">
+                  <div className="flex items-center gap-3">
+                    <LayoutDashboard className="w-6 h-6 text-purple-400" />
+                    <h2 className="text-xl font-bold">Persona (Soul)</h2>
+                  </div>
+
+                  <div className="space-y-4">
+                    <p className="text-sm text-slate-400 leading-relaxed">
+                      Instruksi sistem khusus untuk profil <strong>{activeProfile.name}</strong>.
+                    </p>
+                    <textarea 
+                      value={activeProfile.soul}
+                      onChange={(e) => updateProfileField('soul', e.target.value)}
+                      className="w-full h-[380px] bg-white/5 border border-white/10 rounded-2xl p-6 focus:border-purple-500 outline-none transition-all font-mono text-sm scrollbar-thin scrollbar-thumb-white/10 resize-none"
+                      placeholder="# Bot Persona..."
+                    />
+                    <button 
+                      onClick={handleSaveSoul}
+                      className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl font-bold transition-all shadow-xl shadow-purple-600/20"
+                    >
+                      Update Persona
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="glass rounded-3xl p-20 flex flex-col items-center justify-center text-center space-y-6">
+                <div className="p-6 bg-white/5 rounded-full">
+                  <Zap className="w-12 h-12 text-slate-500 opacity-20" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold mb-2">Belum Ada Profil AI</h3>
+                  <p className="text-slate-400 max-w-sm mx-auto">
+                    Klik tombol <strong>+ New Profile</strong> di atas untuk membuat konfigurasi AI pertama Anda.
+                  </p>
+                </div>
                 <button 
-                  onClick={handleSaveSoul}
-                  className="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl font-bold transition-all shadow-xl shadow-purple-600/20"
+                  onClick={() => setShowAddModal(true)}
+                  className="px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-full font-bold transition-all"
                 >
-                  Save Persona
+                  Create Your First Profile
                 </button>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>

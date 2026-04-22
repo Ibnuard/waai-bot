@@ -8,20 +8,24 @@
     "server": "nodemon server/index.js",
     "client": "npm run dev --prefix client",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "kill": "powershell -Command \"Stop-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess -Force -ErrorAction SilentlyContinue\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^2.0.41",
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "ai": "^6.0.168",
     "axios": "^1.15.2",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "pino": "^10.3.1",
     "qrcode-terminal": "^0.12.0",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
@@ -29,10 +33,11 @@
   },
   "nodemonConfig": {
     "ignore": [
-      "auth_info_baileys/*",
-      "client/*",
+      "auth_info_baileys/",
+      "server/config/",
+      "client/",
       "node_modules/*"
     ],
-    "delay": 1000
+    "delay": 2500
   }
 }

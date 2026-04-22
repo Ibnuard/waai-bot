@@ -5,6 +5,7 @@ const cors = require('cors');
 const path = require('path');
 const waManager = require('./whatsapp');
 const configManager = require('./config_manager');
+const aiManager = require('./ai');
 
 const app = express();
 const server = http.createServer(app);
@@ -49,25 +50,65 @@ io.on('connection', (socket) => {
         await waManager.resetSession();
     });
 
-    // AI Configuration Events
+    // AI Configuration & Profiles Events
     socket.on('ai-config-get', () => {
         socket.emit('ai-config-data', configManager.getAiConfig());
     });
 
-    socket.on('ai-config-update', (config) => {
-        const success = configManager.saveAiConfig(config);
+    socket.on('ai-config-update', (updates) => {
+        const success = configManager.updateActiveProfile(updates);
         socket.emit('ai-config-res', { success });
-        waManager.addLog(`Konfigurasi AI diperbarui.`, success ? 'info' : 'error');
+        if (success) {
+            socket.emit('ai-config-data', configManager.getAiConfig());
+            waManager.addLog(`Konfigurasi profil AI aktif diperbarui.`, 'info');
+        }
     });
 
-    socket.on('soul-get', () => {
-        socket.emit('soul-data', configManager.getSoul());
+    socket.on('ai-profile-switch', (id) => {
+        const success = configManager.switchProfile(id);
+        socket.emit('ai-profile-res', { success, action: 'switch' });
+        if (success) {
+            socket.emit('ai-config-data', configManager.getAiConfig());
+            waManager.addLog(`Berpindah ke profil AI: ${id}`, 'info');
+        }
+    });
+
+    socket.on('ai-profile-add', ({ name, copyFromId }) => {
+        const newProfile = configManager.addProfile(name, copyFromId);
+        socket.emit('ai-profile-res', { success: !!newProfile, action: 'add' });
+        if (newProfile) {
+            socket.emit('ai-config-data', configManager.getAiConfig());
+            waManager.addLog(`Profil AI baru dibuat: ${name}`, 'success');
+        }
+    });
+
+    socket.on('ai-profile-delete', (id) => {
+        const success = configManager.deleteProfile(id);
+        socket.emit('ai-profile-res', { success, action: 'delete' });
+        if (success) {
+            socket.emit('ai-config-data', configManager.getAiConfig());
+            waManager.addLog(`Profil AI dihapus: ${id}`, 'warning');
+        }
     });
 
     socket.on('soul-update', (content) => {
-        const success = configManager.saveSoul(content);
+        const success = configManager.updateActiveProfile({ soul: content });
         socket.emit('soul-res', { success });
-        waManager.addLog(`Persona (SOUL.md) diperbarui.`, success ? 'info' : 'error');
+        if (success) {
+            socket.emit('ai-config-data', configManager.getAiConfig());
+            waManager.addLog(`Persona profil aktif diperbarui.`, 'info');
+        }
+    });
+
+    socket.on('ai-test', async (config) => {
+        waManager.addLog(`Mengetes koneksi AI ke ${config.baseUrl}...`, 'info');
+        const result = await aiManager.testConnection(config);
+        socket.emit('ai-test-res', result);
+        if (result.success) {
+            waManager.addLog(result.message, 'success');
+        } else {
+            waManager.addLog(result.message, 'error');
+        }
     });
 
     socket.on('disconnect', () => {
