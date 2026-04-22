@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const path = require('path');
 const waManager = require('./whatsapp');
+const configManager = require('./config_manager');
 
 const app = express();
 const server = http.createServer(app);
@@ -40,12 +41,33 @@ io.on('connection', (socket) => {
         waManager.init();
     });
 
-    socket.on('stop-wa', () => {
-        waManager.stop();
+    socket.on('stop-wa', async () => {
+        await waManager.stop();
     });
 
     socket.on('reset-session', async () => {
         await waManager.resetSession();
+    });
+
+    // AI Configuration Events
+    socket.on('ai-config-get', () => {
+        socket.emit('ai-config-data', configManager.getAiConfig());
+    });
+
+    socket.on('ai-config-update', (config) => {
+        const success = configManager.saveAiConfig(config);
+        socket.emit('ai-config-res', { success });
+        waManager.addLog(`Konfigurasi AI diperbarui.`, success ? 'info' : 'error');
+    });
+
+    socket.on('soul-get', () => {
+        socket.emit('soul-data', configManager.getSoul());
+    });
+
+    socket.on('soul-update', (content) => {
+        const success = configManager.saveSoul(content);
+        socket.emit('soul-res', { success });
+        waManager.addLog(`Persona (SOUL.md) diperbarui.`, success ? 'info' : 'error');
     });
 
     socket.on('disconnect', () => {

@@ -9,6 +9,8 @@ const pino = require('pino');
 const { Boom } = require('@hapi/boom');
 const path = require('path');
 const fs = require('fs');
+const aiManager = require('./ai');
+const configManager = require('./config_manager');
 
 class WhatsAppManager {
     constructor() {
@@ -157,7 +159,29 @@ class WhatsAppManager {
 
                 this.addLog(`[${pushName}] (${this.normalizeJid(from)}): ${content.substring(0, 50)}${content.length > 50 ? '...' : ''}`, 'message');
 
-                if (content.trim().toLowerCase() === '!hi') {
+                const config = configManager.getAiConfig();
+                const trigger = (config.triggerPrefix || '/ai ').trim().toLowerCase();
+                const cleanContent = content.trim();
+
+                // 1. Check for AI Trigger
+                if (config.enabled && cleanContent.toLowerCase().startsWith(trigger)) {
+                    const prompt = cleanContent.slice(trigger.length).trim();
+                    if (!prompt) return;
+
+                    try {
+                        this.addLog(`[AI] Memproses pesan dari ${pushName}...`, 'info');
+                        const response = await aiManager.generateResponse(prompt, from);
+                        await this.sock.sendMessage(from, { text: response }, { quoted: msg });
+                        this.addLog(`[AI] Membalas ke ${pushName}`, 'success');
+                    } catch (e) {
+                        this.addLog(`[AI Error] ${e.message}`, 'error');
+                        await this.sock.sendMessage(from, { text: `❌ ${e.message}` }, { quoted: msg });
+                    }
+                    return;
+                }
+
+                // 2. Simple Commands (Legacy)
+                if (cleanContent.toLowerCase() === '!hi') {
                     try {
                         await this.sock.sendMessage(from, { text: '!halo' }, { quoted: msg });
                         this.addLog(`Membalas !hi ke ${this.normalizeJid(from)}`, 'info');
