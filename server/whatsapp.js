@@ -164,11 +164,24 @@ class WhatsAppManager {
                 const cleanContent = content.trim();
 
                 // Detailed debug log (only in console)
-                console.log(`[DEBUG] Check Trigger - msg: "${cleanContent}", trigger: "${trigger}", profile: "${profile.name}", enabled: ${profile.enabled}`);
+                console.log(`[DEBUG] Check Trigger - msg: "${cleanContent}", trigger: "${trigger}", profile: "${profile.name}", enabled: ${profile.enabled}, respondAll: ${profile.respondAll}, allowGroups: ${profile.allowGroups}`);
 
                 // 1. Check for AI Trigger
-                if (profile.enabled && cleanContent.toLowerCase().startsWith(trigger)) {
-                    const prompt = cleanContent.slice(trigger.length).trim();
+                const isGroup = from.endsWith('@g.us');
+                let shouldRespond = profile.enabled && (profile.respondAll || cleanContent.toLowerCase().startsWith(trigger));
+
+                // If respondAll is ON, check for group restriction
+                if (shouldRespond && profile.respondAll && isGroup && !profile.allowGroups) {
+                    shouldRespond = false;
+                    console.log(`[DEBUG] Skip group message because allowGroups is OFF`);
+                }
+
+                if (shouldRespond) {
+                    // Calculate prompt (if respondAll, use whole message, otherwise strip prefix)
+                    const prompt = profile.respondAll 
+                      ? cleanContent 
+                      : cleanContent.slice(trigger.length).trim();
+
                     if (!prompt) return;
 
                     try {

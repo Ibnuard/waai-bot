@@ -15,6 +15,8 @@ class ConfigManager {
             baseUrl: 'https://openrouter.ai/api/v1',
             apiKey: '',
             triggerPrefix: '/ai ',
+            respondAll: false,
+            allowGroups: false,
             useHistory: false,
             soul: `# Bot Persona\n\nAnda adalah asisten AI yang ramah dan membantu di WhatsApp. Jawablah pesan dengan singkat dan jelas.`
         };

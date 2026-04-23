@@ -787,14 +787,43 @@ function Dashboard() {
                           />
                         )}
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Trigger Prefix</label>
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Trigger Prefix</label>
+                          <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-slate-500 italic">Reply to All</span>
+                              <button 
+                                onClick={() => {
+                                  const newVal = !activeProfile.respondAll;
+                                  updateProfileFields({ respondAll: newVal, allowGroups: newVal ? activeProfile.allowGroups : false }, true);
+                                }}
+                                className={`w-10 h-5 rounded-full transition-all relative ${activeProfile.respondAll ? 'bg-purple-600' : 'bg-slate-700'}`}
+                              >
+                                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${activeProfile.respondAll ? 'right-0.5' : 'left-0.5'}`} />
+                              </button>
+                            </div>
+                            
+                            {activeProfile.respondAll && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-500 italic">Allow in Groups</span>
+                                <button 
+                                  onClick={() => updateProfileFields({ allowGroups: !activeProfile.allowGroups }, true)}
+                                  className={`w-10 h-5 rounded-full transition-all relative ${activeProfile.allowGroups ? 'bg-indigo-600' : 'bg-slate-700'}`}
+                                >
+                                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${activeProfile.allowGroups ? 'right-0.5' : 'left-0.5'}`} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         <input 
                           type="text"
-                          value={activeProfile.triggerPrefix}
+                          value={activeProfile.respondAll ? "RESPOND ALL MODE" : activeProfile.triggerPrefix}
                           onChange={(e) => updateProfileFields({ triggerPrefix: e.target.value })}
+                          disabled={activeProfile.respondAll}
                           placeholder="/ai "
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all"
+                          className={`w-full bg-white/5 border border-white/10 rounded-2xl p-4 focus:border-blue-500 outline-none transition-all ${activeProfile.respondAll ? 'opacity-50 cursor-not-allowed select-none' : ''}`}
                         />
                       </div>
                     </div>
