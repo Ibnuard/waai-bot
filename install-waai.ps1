@@ -53,6 +53,7 @@ $batContent | Out-File -FilePath "START.bat" -Encoding ascii
 # 4. Install Dependencies
 Write-Host "[4/5] Installing dependencies... (may take 1-2 minutes)" -ForegroundColor Cyan
 npm install
+npm install --prefix client
 
 # 5. Build Project
 Write-Host "[5/5] Building client..." -ForegroundColor Cyan
