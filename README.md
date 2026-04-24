@@ -9,17 +9,9 @@ WhatsApp AI Bot dashboard dengan integrasi WhatsApp Baileys dan AI (Google Gemin
 - Integrasi berbagai model AI.
 - **Trial Mode**: Bisa diatur untuk membatasi koneksi selama 5 menit.
 
-## Instalasi Otomatis (Windows One-Liner)
+### Instalasi Otomatis (Windows One-Liner)
 
-Buka PowerShell di folder tempat Anda ingin menginstal, lalu jalankan salah satu perintah berikut:
-
-### 1. Versi Full (Release)
-
-```powershell
-powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Ibnuard/waai-bot/master/install-waai.ps1' -OutFile 'install.ps1'; .\install.ps1"
-```
-
-### 2. Versi Trial (Hanya 5 Menit)
+Buka PowerShell di folder tempat Anda ingin menginstal, lalu jalankan perintah berikut:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/Ibnuard/waai-bot/master/install-waai.ps1' -OutFile 'install.ps1'; .\install.ps1 -Trial"
