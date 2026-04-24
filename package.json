@@ -8,6 +8,8 @@
     "server": "nodemon server/index.js",
     "client": "npm run dev --prefix client",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "build": "npm run build --prefix client",
+    "prod": "npm run build && NODE_ENV=production npm start",
     "test": "echo \"Error: no test specified\" && exit 1",
     "kill": "powershell -Command \"Stop-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess -Force -ErrorAction SilentlyContinue\""
   },
