@@ -37,27 +37,47 @@ Copy-Item -Path "waai-bot-temp\waai-bot-master\*" -Destination "." -Recurse -For
 Remove-Item -Path "waai-bot-temp" -Recurse -Force
 Remove-Item -Path $zipPath -Force
 
+# Clean up client source (since it's already pre-built in server/web)
+if (Test-Path "client") {
+    Write-Host "Cleaning up source files..." -ForegroundColor Yellow
+    Remove-Item -Path "client" -Recurse -Force
+}
+
 # 3. Configure START.bat
 Write-Host "[3/5] Configuring START.bat..." -ForegroundColor Cyan
 $batContent = @"
 @echo off
+SETLOCAL EnableDelayedExpansion
 TITLE WAAI Bot Dashboard
-echo Starting WAAI Bot in Production Mode...
-SET APP_MODE=$Mode
+echo ========================================
+echo   Starting WAAI Bot in Production Mode
+echo ========================================
+
+IF NOT DEFINED APP_MODE (
+    SET APP_MODE=$Mode
+)
+SET NODE_ENV=production
+
 echo Mode: %APP_MODE%
+echo.
+
 npm run prod
+if %ERRORLEVEL% neq 0 (
+    echo.
+    echo [ERROR] Application failed to start.
+    echo Please check the error messages above.
+)
+echo.
 pause
 "@
 $batContent | Out-File -FilePath "START.bat" -Encoding ascii
 
 # 4. Install Dependencies
-Write-Host "[4/5] Installing dependencies... (may take 1-2 minutes)" -ForegroundColor Cyan
+Write-Host "[4/5] Installing dependencies... (may take 1 minute)" -ForegroundColor Cyan
 npm install
-npm install --prefix client
 
-# 5. Build Project
-Write-Host "[5/5] Building client..." -ForegroundColor Cyan
-npm run build
+# 5. Build Project (Skipped - using pre-built web folder)
+Write-Host "[5/5] Finalizing installation..." -ForegroundColor Cyan
 
 Write-Host "====================================" -ForegroundColor Green
 Write-Host "      INSTALLATION SUCCESSFUL!      " -ForegroundColor Green

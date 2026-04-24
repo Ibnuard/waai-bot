@@ -8,9 +8,8 @@
     "server": "nodemon server/index.js",
     "client": "npm run dev --prefix client",
     "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "build": "cd client && npm install && npm run build && cd .. && rm -rf server/web && mkdir -p server/web && cp -r client/dist/* server/web/",
+    "build": "echo 'Build skipped: using pre-built web folder in server/web'",
     "prod": "cross-env NODE_ENV=production npm start",
-    "postinstall": "cd client && npm install",
     "test": "echo \"Error: no test specified\" && exit 1",
     "kill": "powershell -Command \"Stop-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess -Force -ErrorAction SilentlyContinue\""
   },
